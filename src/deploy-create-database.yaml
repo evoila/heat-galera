@@ -1,0 +1,72 @@
+heat_template_version: 2015-10-15
+description: MariaDB Galera Cluster installation template
+
+parameters:
+
+  server:
+    type: string
+    description: ID of one of the database servers
+    constraints:
+      - custom_constraint: nova.server
+
+  http_proxy:
+    type: string
+    description: "HTTP proxy URL"
+    default: ''
+
+  https_proxy:
+    type: string
+    description: "HTTPS proxy URL"
+    default: ''
+
+  no_proxy:
+    type: string
+    description: "Exceptions to proxy configuration"
+    default: ''
+
+  root_password:
+     type: string
+     hidden: true
+
+  name:
+    type: string
+
+  username:
+    type: string
+
+
+resources:
+
+  create_database:
+    type: OS::Heat::SoftwareConfig
+    properties:
+      group: script
+      config: { get_file: scripts/create-database.sh }
+      inputs:
+        - name: ROOT_PASSWORD
+        - name: NAME
+        - name: USERNAME
+        - name: PASSWORD
+
+  password:
+    type: OS::Heat::RandomString
+
+  deploy_create_database:
+    type: OS::Heat::SoftwareDeployment
+    properties:
+      config: { get_resource: create_database }
+      server: { get_param: server }
+      signal_transport: HEAT_SIGNAL
+      input_values:
+        http_proxy: { get_param: http_proxy }
+        https_proxy: { get_param: https_proxy }
+        no_proxy: { get_param: no_proxy }
+        ROOT_PASSWORD: { get_param: root_password }
+        NAME: { get_param: name }
+        USERNAME: { get_param: username }
+        PASSWORD: { get_resource: password }
+
+outputs:
+
+  password:
+    value: { get_resource: password }

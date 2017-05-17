@@ -1,0 +1,152 @@
+heat_template_version: 2015-10-15
+description: MariaDB Galera Cluster installation template
+
+parameters:
+
+  server_map:
+    type: json
+    description: Map of servers to be used with OS::Heat::SoftwareDeploymentGroup
+
+  server_list:
+    type: comma_delimited_list
+    description: List of server IDs
+
+  server_names:
+    type: comma_delimited_list
+    description: List of server names
+
+  server_addresses:
+    type: comma_delimited_list
+    description: List of server addresses
+
+  http_proxy:
+    type: string
+    description: "HTTP proxy URL"
+    default: ''
+
+  https_proxy:
+    type: string
+    description: "HTTPS proxy URL"
+    default: ''
+
+  no_proxy:
+    type: string
+    description: "Exceptions to proxy configuration"
+    default: ''
+
+resources:
+
+  # SOFTWARE CONFIGS
+
+  install_mariadb:
+    type: OS::Heat::SoftwareConfig
+    properties:
+      group: script
+      config: { get_file: scripts/ubuntu/1_install.sh }
+      inputs:
+        - name: ROOT_PASSWORD
+
+  create_sst_user:
+    type: OS::Heat::SoftwareConfig
+    properties:
+      group: script
+      config: { get_file: scripts/ubuntu/2_create-sst-user.sh }
+      inputs:
+        - name: ROOT_PASSWORD
+        - name: SST_PASSWORD
+
+  configure_mariadb:
+    type: OS::Heat::SoftwareConfig
+    properties:
+      group: script
+      config: { get_file: scripts/ubuntu/3_configure.sh }
+      inputs:
+        - name: SST_PASSWORD
+        - name: SERVER_ADDRESSES
+
+  bootstrap:
+    type: OS::Heat::SoftwareConfig
+    properties:
+      group: script
+      config:  { get_file: scripts/ubuntu/4_bootstrap.sh }
+      inputs:
+        - name: SST_PASSWORD
+
+  slave_start:
+    type: OS::Heat::SoftwareConfig
+    properties:
+      group: script
+      config: { get_file: scripts/ubuntu/5_slave-start.sh }
+      inputs:
+        - name: MASTER_NAME
+        - name: SST_PASSWORD
+
+
+  # SOFTWARE DEPLOYMENTS
+
+  root_password:
+    type: OS::Heat::RandomString
+
+  sst_password:
+    type: OS::Heat::RandomString
+
+  deploy_install_mariadb:
+    type: OS::Heat::SoftwareDeploymentGroup
+    properties:
+      signal_transport: HEAT_SIGNAL
+      config: { get_resource: install_mariadb }
+      servers: { get_param: server_map }
+      input_values:
+        ROOT_PASSWORD: { get_resource: root_password }
+
+  deploy_create_sst_user:
+    type: OS::Heat::SoftwareDeploymentGroup
+    properties:
+      signal_transport: HEAT_SIGNAL
+      config: { get_resource: create_sst_user }
+      servers: { get_param: server_map }
+      input_values:
+        ROOT_PASSWORD: { get_resource: root_password }
+        SST_PASSWORD: { get_resource: sst_password }
+    depends_on: 
+      - deploy_install_mariadb
+
+  deploy_configure_mariadb:
+    type: OS::Heat::SoftwareDeploymentGroup
+    properties:
+      signal_transport: HEAT_SIGNAL
+      config: { get_resource: configure_mariadb }
+      servers: { get_param: server_map }
+      input_values:
+        SST_PASSWORD: { get_resource: sst_password }
+        SERVER_ADDRESSES: { get_param: server_addresses }
+    depends_on: 
+      - deploy_create_sst_user
+
+  deploy_bootstrap:
+    type: OS::Heat::SoftwareDeployment
+    properties:
+      signal_transport: HEAT_SIGNAL
+      config: { get_resource: bootstrap }
+      server: { get_param: [ server_list, 0 ] }
+      input_values:
+        SST_PASSWORD: { get_resource: sst_password }
+    depends_on:
+      - deploy_configure_mariadb
+
+  deploy_slave_start:
+    type: OS::Heat::SoftwareDeploymentGroup
+    properties:
+      signal_transport: HEAT_SIGNAL
+      config:  { get_resource: slave_start }
+      servers: { get_param: server_map }
+      input_values:
+        MASTER_NAME: { get_param: [ server_names, 0 ] }
+        SST_PASSWORD: { get_resource: sst_password }
+    depends_on:
+      - deploy_bootstrap
+
+outputs:
+
+  root_password:
+    value: { get_resource: root_password }
