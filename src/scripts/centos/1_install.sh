@@ -12,7 +12,13 @@ systemctl enable mariadb
 # Start MariaDB to set root password
 service mariadb start
 sleep 5
-
 mysqladmin -u root password "$ROOT_PASSWORD"
+
+# Remove anonymous entries
+cat << EOF | mysql -u root --password="$ROOT_PASSWORD"
+DELETE FROM mysql.user WHERE User='';
+FLUSH PRIVILEGES;
+EXIT
+EOF
 
 service mariadb stop
