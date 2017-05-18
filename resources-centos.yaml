@@ -1,0 +1,3 @@
+resource_registry:
+  "Evoila::Deployment::Galera": src/deploy-galera-centos.yaml
+  "Evoila::Deployment::Galera::CreateDatabase": src/deploy-create-database.yaml
